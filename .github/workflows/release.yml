@@ -24,6 +24,19 @@ jobs:
           go-version-file: go.mod
       - name: Test
         run: go test ./...
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## Test"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Result | passed |"
+            echo "| Go | $(go version | tr -s ' ') |"
+            echo "| Commit | \`${GITHUB_SHA:0:7}\` |"
+            echo "| Event | ${{ github.event_name }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   release:
     needs: test
@@ -42,8 +55,27 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git tag --points-at HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+          write_summary() {
+            {
+              echo "## Release"
+              echo ""
+              echo "| | |"
+              echo "|---|---|"
+              echo "| Status | ${1} |"
+              echo "| Tag | ${2} |"
+              echo "| Bump | ${BUMP} |"
+              echo "| Previous | ${3} |"
+              echo "| Commit | \`${GITHUB_SHA:0:7}\` |"
+              if [ -n "${4:-}" ]; then
+                echo "| URL | ${4} |"
+              fi
+            } >> "${GITHUB_STEP_SUMMARY}"
+          }
+
+          existing="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
+          if [ -n "${existing}" ]; then
             echo "HEAD already has a semver tag; skipping release"
+            write_summary "skipped (HEAD already tagged)" "${existing}" "${existing}" ""
             exit 0
           fi
 
@@ -78,4 +110,5 @@ jobs:
           fi
 
           echo "Creating ${tag} (bump=${BUMP}, previous=${latest:-none})"
-          gh release create "${tag}" --generate-notes --target "${GITHUB_SHA}"
+          url="$(gh release create "${tag}" --generate-notes --target "${GITHUB_SHA}")"
+          write_summary "created" "${tag}" "${latest:-none}" "${url}"
