@@ -34,7 +34,7 @@ func (e *Error) Unwrap() error {
 	return e.err
 }
 
-func (e * Error) GRPCStatus() *status.Status {
+func (e *Error) GRPCStatus() *status.Status {
 	if e == nil {
 		return status.New(codes.OK, "")
 	}
@@ -59,14 +59,14 @@ func newError(code codes.Code, msg string) *Error {
 	return &Error{Code: code, Message: msg}
 }
 
-func InvalidArgument(msg string) *Error { return newError(codes.InvalidArgument, msg) }
-func NotFound(msg string) *Error { return newError(codes.NotFound, msg) }
-func Unauthenticated(msg string) *Error { return newError(codes.Unauthenticated, msg) }
-func PermissionDenied(msg string) *Error { return newError(codes.PermissionDenied, msg) }
-func AlreadyExists(msg string) *Error { return newError(codes.AlreadyExists, msg) }
+func InvalidArgument(msg string) *Error    { return newError(codes.InvalidArgument, msg) }
+func NotFound(msg string) *Error           { return newError(codes.NotFound, msg) }
+func Unauthenticated(msg string) *Error    { return newError(codes.Unauthenticated, msg) }
+func PermissionDenied(msg string) *Error   { return newError(codes.PermissionDenied, msg) }
+func AlreadyExists(msg string) *Error      { return newError(codes.AlreadyExists, msg) }
 func FailedPrecondition(msg string) *Error { return newError(codes.FailedPrecondition, msg) }
-func Unavailable(msg string) *Error { return newError(codes.Unavailable, msg) }
-func Internal(msg string) *Error { return newError(codes.Internal, msg) }
+func Unavailable(msg string) *Error        { return newError(codes.Unavailable, msg) }
+func Internal(msg string) *Error           { return newError(codes.Internal, msg) }
 
 func Wrap(code codes.Code, msg string, err error) *Error {
 	return &Error{Code: code, Message: msg, err: err}
