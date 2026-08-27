@@ -17,13 +17,39 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      skip_release: ${{ steps.commit_modules.outputs.skip_release }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: Tidy modules
+        run: go mod tidy
+      - name: Download modules
+        run: go mod download
       - name: Test
         run: go test ./...
+      - name: Commit go.sum
+        id: commit_modules
+        run: |
+          set -euo pipefail
+          echo "skip_release=false" >> "${GITHUB_OUTPUT}"
+          if git diff --quiet go.mod go.sum; then
+            echo "modules=clean" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add go.mod go.sum
+          git commit -m "chore: go mod tidy"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "skip_release=true" >> "${GITHUB_OUTPUT}"
+          echo "modules=committed" >> "${GITHUB_OUTPUT}"
       - name: Summary
         if: success()
         run: |
@@ -33,13 +59,18 @@ jobs:
             echo "| | |"
             echo "|---|---|"
             echo "| Result | passed |"
+            echo "| Modules | ${{ steps.commit_modules.outputs.modules }} |"
             echo "| Go | $(go version | tr -s ' ') |"
             echo "| Commit | \`${GITHUB_SHA:0:7}\` |"
             echo "| Event | ${{ github.event_name }} |"
+            if [ "${{ steps.commit_modules.outputs.skip_release }}" = "true" ]; then
+              echo "| Release | skipped; next push will release |"
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
   release:
     needs: test
+    if: needs.test.outputs.skip_release != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
