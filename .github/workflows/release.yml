@@ -20,7 +20,8 @@ jobs:
     permissions:
       contents: write
     outputs:
-      skip_release: ${{ steps.commit_modules.outputs.skip_release }}
+      release_sha: ${{ steps.commit_modules.outputs.release_sha }}
+      modules: ${{ steps.commit_modules.outputs.modules }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -38,7 +39,7 @@ jobs:
         id: commit_modules
         run: |
           set -euo pipefail
-          echo "skip_release=false" >> "${GITHUB_OUTPUT}"
+          echo "release_sha=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
           if git diff --quiet go.mod go.sum; then
             echo "modules=clean" >> "${GITHUB_OUTPUT}"
             exit 0
@@ -46,9 +47,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add go.mod go.sum
-          git commit -m "chore: go mod tidy"
+          # [skip ci] so this push does not start a second Release run.
+          git commit -m "chore: go mod tidy [skip ci]"
           git push origin "HEAD:${GITHUB_REF_NAME}"
-          echo "skip_release=true" >> "${GITHUB_OUTPUT}"
+          echo "release_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
           echo "modules=committed" >> "${GITHUB_OUTPUT}"
       - name: Summary
         if: success()
@@ -56,21 +58,18 @@ jobs:
           {
             echo "## Test"
             echo ""
-            echo "| | |"
+            echo "| Field | Value |"
             echo "|---|---|"
             echo "| Result | passed |"
             echo "| Modules | ${{ steps.commit_modules.outputs.modules }} |"
             echo "| Go | $(go version | tr -s ' ') |"
-            echo "| Commit | \`${GITHUB_SHA:0:7}\` |"
+            echo "| Trigger | \`${GITHUB_SHA:0:7}\` |"
+            echo "| Release SHA | \`${{ steps.commit_modules.outputs.release_sha }}\` |"
             echo "| Event | ${{ github.event_name }} |"
-            if [ "${{ steps.commit_modules.outputs.skip_release }}" = "true" ]; then
-              echo "| Release | skipped; next push will release |"
-            fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
   release:
     needs: test
-    if: needs.test.outputs.skip_release != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -83,30 +82,33 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUMP: ${{ github.event_name == 'workflow_dispatch' && inputs.bump || 'patch' }}
+          RELEASE_SHA: ${{ needs.test.outputs.release_sha }}
         run: |
           set -euo pipefail
+
+          git fetch origin "${GITHUB_REF_NAME}" --tags
 
           write_summary() {
             {
               echo "## Release"
               echo ""
-              echo "| | |"
+              echo "| Field | Value |"
               echo "|---|---|"
               echo "| Status | ${1} |"
               echo "| Tag | ${2} |"
               echo "| Bump | ${BUMP} |"
               echo "| Previous | ${3} |"
-              echo "| Commit | \`${GITHUB_SHA:0:7}\` |"
+              echo "| Commit | \`${RELEASE_SHA:0:7}\` |"
               if [ -n "${4:-}" ]; then
                 echo "| URL | ${4} |"
               fi
             } >> "${GITHUB_STEP_SUMMARY}"
           }
 
-          existing="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
+          existing="$(git tag --points-at "${RELEASE_SHA}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
           if [ -n "${existing}" ]; then
-            echo "HEAD already has a semver tag; skipping release"
-            write_summary "skipped (HEAD already tagged)" "${existing}" "${existing}" ""
+            echo "Release SHA already has a semver tag; skipping release"
+            write_summary "skipped (commit already tagged)" "${existing}" "${existing}" ""
             exit 0
           fi
 
@@ -140,6 +142,6 @@ jobs:
             tag="v${major}.${minor}.${patch}"
           fi
 
-          echo "Creating ${tag} (bump=${BUMP}, previous=${latest:-none})"
-          url="$(gh release create "${tag}" --generate-notes --target "${GITHUB_SHA}")"
+          echo "Creating ${tag} (bump=${BUMP}, previous=${latest:-none}, target=${RELEASE_SHA})"
+          url="$(gh release create "${tag}" --generate-notes --target "${RELEASE_SHA}")"
           write_summary "created" "${tag}" "${latest:-none}" "${url}"
