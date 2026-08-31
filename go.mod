@@ -1,4 +1,4 @@
-module github.com/huponx/go-common
+module github.com/huponx/x-gocommon
 
 go 1.26
 
