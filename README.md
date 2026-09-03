@@ -139,3 +139,43 @@ go get github.com/huponx/x-gocommon@v0.1.0
 ```
 ```bash
 go test ./...
+```
+## Service-to-service Bearer auth
+Token belongs to the **receiver**. Callers must present the same secret. gRPC helpers take a string; they do not read env or hardcode a service name.
+
+**Convention**
+
+| | |
+| --- | --- |
+| Env | `{RECEIVER}_S2S_TOKEN` (e.g. `COURIER_S2S_TOKEN`) |
+| Source | Kubernetes `Secret` via `secretKeyRef`, key `token`, name `{receiver}-s2s-token` |
+| Receiver | Verify with its own env |
+| Caller | Send Bearer from the **target** env (multiple peers → multiple env vars) |
+
+```yaml
+- name: COURIER_S2S_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: courier-s2s-token
+      key: token
+```
+
+**Server**
+
+```go
+// Production / staging: panic at New if token is empty.
+grpcserver.New(grpcserver.WithBearerAuth(token))
+
+// Local ENV=dev: empty token leaves the server open.
+grpcserver.New(grpcserver.WithOptionalBearerAuth(token))
+```
+
+`/grpc.health.v1.Health/*` skips auth so kube probes work without a token. Reflection still requires a token when auth is on.
+
+**Client**
+
+```go
+grpcclient.Dial(ctx, target, grpcclient.WithBearerToken(os.Getenv("COURIER_S2S_TOKEN")))
+```
+
+Empty token is a no-op (no `authorization` header).

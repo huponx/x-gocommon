@@ -8,8 +8,40 @@ import (
 	"github.com/huponx/x-gocommon/requestctx"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+const mdAuthorization = "authorization"
+
+func appendBearer(ctx context.Context, token string) context.Context {
+	if token == "" {
+		return ctx
+	}
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		md = md.Copy()
+	} else {
+		md = metadata.MD{}
+	}
+	if len(md.Get(mdAuthorization)) > 0 {
+		return ctx
+	}
+	md.Set(mdAuthorization, "Bearer "+token)
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+func unaryBearerToken(token string) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		return invoker(appendBearer(ctx, token), method, req, reply, cc, opts...)
+	}
+}
+
+func streamBearerToken(token string) grpc.StreamClientInterceptor {
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		return streamer(appendBearer(ctx, token), desc, cc, method, opts...)
+	}
+}
 
 func unaryRequestContext() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {

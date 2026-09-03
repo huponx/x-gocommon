@@ -2,6 +2,7 @@ package grpcclient
 
 import (
 	"crypto/tls"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -18,6 +19,7 @@ type options struct {
 	maxRecvMsgSize int
 	maxSendMsgSize int
 	keepalive      keepalive.ClientParameters
+	bearerToken    string
 	extra          []grpc.DialOption
 }
 
@@ -74,5 +76,13 @@ func WithBlock(block bool) Option {
 func WithDialOptions(opts ...grpc.DialOption) Option {
 	return func(o *options) {
 		o.extra = append(o.extra, opts...)
+	}
+}
+
+// WithBearerToken attaches authorization: Bearer <token> when the caller
+// has not already set that metadata key. An empty token is a no-op.
+func WithBearerToken(token string) Option {
+	return func(o *options) {
+		o.bearerToken = strings.TrimSpace(token)
 	}
 }

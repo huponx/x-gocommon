@@ -28,9 +28,15 @@ func streamRequestContext() grpc.StreamServerInterceptor {
 	}
 }
 
+const healthMethodPrefix = "/grpc.health.v1.Health/"
+
+func isHealthMethod(method string) bool {
+	return len(method) >= len(healthMethodPrefix) && method[:len(healthMethodPrefix)] == healthMethodPrefix
+}
+
 func unaryAuth(auth AuthFunc) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		if auth == nil {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if auth == nil || isHealthMethod(info.FullMethod) {
 			return handler(ctx, req)
 		}
 		ctx, err := auth(ctx)
@@ -42,8 +48,8 @@ func unaryAuth(auth AuthFunc) grpc.UnaryServerInterceptor {
 }
 
 func streamAuth(auth AuthFunc) grpc.StreamServerInterceptor {
-	return func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if auth == nil {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if auth == nil || isHealthMethod(info.FullMethod) {
 			return handler(srv, ss)
 		}
 		ctx, err := auth(ss.Context())
